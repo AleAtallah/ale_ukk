@@ -1,0 +1,78 @@
+<?php
+
+namespace App\Livewire\Settings;
+
+use App\Models\User;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Session;
+use Illuminate\Validation\Rule;
+use Livewire\Component;
+
+class Profile extends Component
+{
+    public string $name = '';
+    public string $email = '';
+
+    /**
+     * Mount the component.
+     */
+    public function mount(): void
+    {
+        $user = Auth::user();
+        $this->name = $user->name;
+        $this->email = $user->email;
+    }
+
+    /**
+     * Update the profile information for the currently authenticated user.
+     */
+    public function updateProfileInformation(): void
+    {
+        $user = Auth::user();
+
+        $validated = $this->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => [
+                'required',
+                'string',
+                'lowercase',
+                'email',
+                'max:255',
+                Rule::unique(User::class)->ignore($user->id),
+            ],
+        ]);
+
+        $user->fill($validated);
+
+        // Jika email diubah, reset status verifikasi
+        if ($user->isDirty('email')) {
+            $user->email_verified_at = null;
+        }
+
+        $user->save();
+
+        // Mengirimkan event ke sistem agar komponen lain (seperti Navbar/Sidebar) 
+        // menyadari ada perubahan nama tanpa refresh full page.
+        $this->dispatch('profile-updated', name: $user->name);
+        
+        // Opsional: Jika kamu ingin sidebar langsung berubah namanya jika menggunakan komponen terpisah
+        // $this->dispatch('refresh-navigation'); 
+    }
+
+    /**
+     * Send an email verification notification to the current user.
+     */
+    public function resendVerificationNotification(): void
+    {
+        $user = Auth::user();
+
+        if ($user->hasVerifiedEmail()) {
+            $this->redirectIntended(default: route('dashboard', absolute: false), navigate: true);
+            return;
+        }
+
+        $user->sendEmailVerificationNotification();
+
+        Session::flash('status', 'verification-link-sent');
+    }
+}
